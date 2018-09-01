@@ -1,15 +1,23 @@
 package client
 
 import (
-	"net/http"
-
 	"github.com/sirupsen/logrus"
 )
 
-func UpLoad(addr string, filePath string) error {
+type Client struct {
+	addr string
+}
+
+func NewClient(addr string) *Client {
+	return &Client{
+		addr: addr,
+	}
+}
+
+func (c *Client) UpLoad(filePath string) error {
 	return nil
 }
 
-func Download(addr string, filePath string) error {
+func (c *Client) Download(filePath string) error {
 	return nil
 }
