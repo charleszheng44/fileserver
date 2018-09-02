@@ -1,23 +1,100 @@
 package client
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/sirupsen/logrus"
 )
 
 type Client struct {
-	addr string
+	client    *http.Client
+	remoteURL string
 }
 
-func NewClient(addr string) *Client {
+func NewClient(remoteURL string) *Client {
 	return &Client{
-		addr: addr,
+		client:    &http.Client{},
+		remoteURL: remoteURL,
 	}
 }
 
+// Upload uploads the given file to the fileserver
 func (c *Client) UpLoad(filePath string) error {
-	return nil
+	remoteFileName := filepath.Base(filePath)
+	fileDescriptor, err := os.Open(filePath)
+	if err != nil {
+		logrus.Errorf("fail to open file %s: %v", filePath, err)
+		return err
+	}
+	// prepare the request body
+	values := map[string]io.Reader{
+		"uploadFile": fileDescriptor,
+		"name":       strings.NewReader(remoteFileName),
+	}
+
+	var buf bytes.Buffer
+	multipartWriter := multipart.NewWriter(&buf)
+
+	// generate the request body
+	for key, val := range values {
+		var fieldWriter io.Writer
+		if r, ok := val.(io.Closer); ok {
+			defer r.Close()
+		}
+
+		if r, ok := val.(*os.File); ok {
+			// add file content
+			if fieldWriter, err = multipartWriter.CreateFormFile(key, r.Name()); err != nil {
+				return err
+			}
+		} else {
+			// add other field
+			if fieldWriter, err = multipartWriter.CreateFormField(key); err != nil {
+				return err
+			}
+		}
+		// copy the file/field contents to multipartwriter
+		if _, err = io.Copy(fieldWriter, val); err != nil {
+			return err
+		}
+	}
+
+	// don't forget to close the multipartWriter
+	if closeErr := multipartWriter.Close(); closeErr != nil {
+		logrus.Warnf("fail to close multipart writer: %v", closeErr)
+	}
+
+	// generate new request
+	postReq, err := http.NewRequest("POST", c.remoteURL, &buf)
+	if err != nil {
+		return err
+	}
+
+	// set the content type
+	postReq.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+
+	// send the request
+	postRep, err := c.client.Do(postReq)
+	if err != nil {
+		return err
+	}
+
+	// check response
+	if postRep.StatusCode != http.StatusOK {
+		err = fmt.Errorf("bad status: %s", postRep.Status)
+	}
+
+	return err
 }
 
+// Download downloads the desired file from fileserver
 func (c *Client) Download(filePath string) error {
 	return nil
 }
