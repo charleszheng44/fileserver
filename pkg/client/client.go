@@ -72,7 +72,8 @@ func (c *Client) UpLoad(filePath string) error {
 	}
 
 	// generate new request
-	postReq, err := http.NewRequest("POST", c.remoteURL, &buf)
+	uploadURL := filepath.Join(c.remoteURL, "upload")
+	postReq, err := http.NewRequest("POST", uploadURL, &buf)
 	if err != nil {
 		return err
 	}
@@ -85,16 +86,38 @@ func (c *Client) UpLoad(filePath string) error {
 	if err != nil {
 		return err
 	}
+	defer postRep.Body.Close()
 
 	// check response
 	if postRep.StatusCode != http.StatusOK {
 		err = fmt.Errorf("bad status: %s", postRep.Status)
+		return err
 	}
 
-	return err
+	return nil
 }
 
 // Download downloads the desired file from fileserver
-func (c *Client) Download(filePath string) error {
+func (c *Client) Download(filename string) error {
+
+	fileDescriptor, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0755)
+	if err != nil {
+		return err
+	}
+	defer fileDescriptor.Close()
+
+	downloadUrl := filepath.Join(c.remoteURL, "download", filename)
+
+	getRep, err := http.Get(downloadUrl)
+	if err != nil {
+		return err
+	}
+	defer getRep.Body.Close()
+
+	_, err = io.Copy(fileDescriptor, getRep.Body)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
