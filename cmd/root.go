@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -54,6 +55,14 @@ func uploadHandler(repWriter http.ResponseWriter, req *http.Request) {
 
 	// parse and validate file and post parameters
 	fileName := req.PostFormValue("name")
+	fileModeStr, parseErr := strconv.ParseUint(req.PostFormValue("mode"), 10, 32)
+	if parseErr != nil {
+		logrus.Errorf("fail to get upload file mode: %v", parseErr)
+		renderError(repWriter, "INVALID_FILE_MODE", http.StatusBadRequest)
+		return
+	}
+	fileMode := uint32(fileModeStr)
+
 	file, _, err := req.FormFile("uploadFile")
 	if err != nil {
 		logrus.Errorf("fail to upload file: %v", err)
@@ -61,6 +70,7 @@ func uploadHandler(repWriter http.ResponseWriter, req *http.Request) {
 		return
 	}
 	defer file.Close()
+
 	fileBytes, err := ioutil.ReadAll(file)
 	if err != nil {
 		logrus.Errorf("fail to upload file: %v", err)
@@ -76,12 +86,20 @@ func uploadHandler(repWriter http.ResponseWriter, req *http.Request) {
 		renderError(repWriter, "CANT_WRITE_FILE", http.StatusInternalServerError)
 		return
 	}
-	defer newFile.Close() // idempotent, okay to call twice
+	defer newFile.Close()
+
 	if _, err := newFile.Write(fileBytes); err != nil || newFile.Close() != nil {
 		logrus.Errorf("fail to upload file: %v", err)
 		renderError(repWriter, "CANT_WRITE_FILE", http.StatusInternalServerError)
 		return
 	}
+
+	if err = os.Chmod(newPath, os.FileMode(fileMode)); err != nil {
+		logrus.Errorf("fail to change file mode: %v", err)
+		renderError(repWriter, "CANT_CHANGE_FILE_MODE", http.StatusInternalServerError)
+		return
+	}
+
 	repWriter.Write([]byte("SUCCESS"))
 }
 

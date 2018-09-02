@@ -33,10 +33,17 @@ func (c *Client) UpLoad(filePath string) error {
 		logrus.Errorf("fail to open file %s: %v", filePath, err)
 		return err
 	}
+	uploadFileMode, err := getFileMode(filePath)
+	if err != nil {
+		logrus.Errorf("fail to get file state: %v", err)
+		return err
+	}
+
 	// prepare the request body
 	values := map[string]io.Reader{
 		"uploadFile": fileDescriptor,
 		"name":       strings.NewReader(remoteFileName),
+		"mode":       strings.NewReader(fmt.Sprint(uint32(uploadFileMode))), // the file mode is uint32
 	}
 
 	var buf bytes.Buffer
@@ -72,7 +79,7 @@ func (c *Client) UpLoad(filePath string) error {
 	}
 
 	// generate new request
-	uploadURL := filepath.Join(c.remoteURL, "upload")
+	uploadURL := fmt.Sprintf("%s/upload", c.remoteURL)
 	postReq, err := http.NewRequest("POST", uploadURL, &buf)
 	if err != nil {
 		return err
@@ -106,7 +113,7 @@ func (c *Client) Download(filename string) error {
 	}
 	defer fileDescriptor.Close()
 
-	downloadUrl := filepath.Join(c.remoteURL, "download", filename)
+	downloadUrl := fmt.Sprintf("%s/download/%s", c.remoteURL, filename)
 
 	getRep, err := http.Get(downloadUrl)
 	if err != nil {
@@ -120,4 +127,12 @@ func (c *Client) Download(filename string) error {
 	}
 
 	return nil
+}
+
+func getFileMode(filename string) (os.FileMode, error) {
+	fileInfo, statErr := os.Stat(filename)
+	if statErr != nil {
+		return os.FileMode(0), statErr
+	}
+	return fileInfo.Mode(), nil
 }
